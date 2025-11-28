@@ -10,12 +10,14 @@ import { Tenant } from '../tenants/tenant.schema';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { EmailVerification } from './email-verification.schema';
+import { RoleMaster } from '../roles/roles.schema';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Tenant.name) private tenantModel: Model<Tenant>,
+    @InjectModel(RoleMaster.name) private roleModel: Model<RoleMaster>,
     @InjectModel(EmailVerification.name)
     private verificationModel: Model<EmailVerification>,
     private jwtService: JwtService,
@@ -47,10 +49,15 @@ export class AuthService {
       { sub: user.id },
       { expiresIn: '7d', secret: process.env.JWT_REFRESH_SECRET },
     );
+
+    const roleMasterDtls = await this.roleModel.findById(user.roleMasterId);
+
     const payload = {
       sub: user._id,
       tenant: user.tenantId?._id ?? null, // 👈 allow null
       role: user.role,
+      roleMaster: roleMasterDtls?.name,
+      permissions: roleMasterDtls?.permissions || {},
     };
 
     return {
