@@ -29,7 +29,7 @@ export class AuthService {
       .findOne({ username })
       .populate<{ tenantId: Tenant }>('tenantId');
 
-    if (!user) throw new UnauthorizedException('Invalid credentials');
+    if (!user) throw new UnauthorizedException('User not found in  system...!');
 
     if (!(await bcrypt.compare(password, user.password)))
       throw new UnauthorizedException('Invalid credentials');

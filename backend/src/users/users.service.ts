@@ -1,75 +1,130 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
-} from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { User } from './users.schema';
-import { Model, Types } from 'mongoose';
-import { Tenant } from 'src/tenants/tenant.schema';
-import * as bcrypt from 'bcrypt';
-import { EmailVerification } from 'src/auth/email-verification.schema';
-import { MailService } from 'src/common/services/mail.service';
-import { randomBytes } from 'crypto';
-import { CreateUserDto } from './users.controller';
-import { RoleMaster } from 'src/roles/roles.schema';
-import { RolesService } from 'src/roles/roles.service';
+  ConflictException,
+  NotFoundException,
+  HttpException,
+} from "@nestjs/common";
+import { InjectModel } from "@nestjs/mongoose";
+import { Model } from "mongoose";
+import { randomBytes } from "crypto";
+
+import { User } from "./users.schema";
+import { Tenant } from "src/tenants/tenant.schema";
+import { RoleMaster } from "src/roles/roles.schema";
+import { EmailVerification } from "src/auth/email-verification.schema";
+
+import { MailService } from "src/common/services/mail.service";
+import { CreateUserDto } from "./users.controller";
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Tenant.name) private tenantModel: Model<Tenant>,
-
     @InjectModel(RoleMaster.name) private roleModel: Model<RoleMaster>,
     @InjectModel(EmailVerification.name)
     private verificationModel: Model<EmailVerification>,
-    private readonly mailService: MailService,
-    private rolesService: RolesService,
+    private readonly mailService: MailService
   ) {}
 
   async createUser(dto: CreateUserDto, logged: any) {
-    console.log(logged, 'ells');
-    const userExists = await this.userModel.findOne({
-      username: dto.username,
-    });
+    try {
+      console.log("Logged User Role:", logged.role);
 
-    if (userExists) throw new BadRequestException('User already exists');
+      /** ------------------------------------------------------
+       * 1. Check if username already exists
+       * ------------------------------------------------------ */
+      const userExists = await this.userModel.findOne({
+        username: dto.username,
+      });
+      // if (!userExists) throw new ConflictException("User not exist..!");
 
-    let tenant;
-    // super-admin can create tenant admin
-    if (logged.role === 'super-admin') {
-      const productType = dto.product;
-      tenant = await this.tenantModel.findOne({ productType: productType });
+      if (userExists) throw new ConflictException("User already exists");
+
+      /** ------------------------------------------------------
+       * 2. Validate role existence
+       * ------------------------------------------------------ */
+      const roleMaster = await this.roleModel.findOne({
+        name: dto.role,
+      });
+
+      if (!roleMaster) throw new NotFoundException("Invalid role provided");
+
+      /** ------------------------------------------------------
+       * 3. Role permission validation
+       * Only Admin or Super-admin can create Admin
+       * ------------------------------------------------------ */
+      if (
+        dto.role === "admin" &&
+        !["admin", "super-admin"].includes(logged.role)
+      ) {
+        throw new BadRequestException(
+          "Only Super-Admin or Admin can create admin users"
+        );
+      }
+
+      /** ------------------------------------------------------
+       * 4. Super-admin creating an admin MUST select a tenant
+       * ------------------------------------------------------ */
+      if (
+        logged.role === "super-admin" &&
+        dto.role === "admin" &&
+        !dto.product
+      ) {
+        throw new BadRequestException(
+          "Please specify tenant for the admin user"
+        );
+      }
+
+      /** ------------------------------------------------------
+       * 5. Resolve tenant for super-admin OR assign logged tenant
+       * ------------------------------------------------------ */
+      let tenant;
+
+      if (logged.role === "super-admin") {
+        tenant = await this.tenantModel.findOne({
+          productType: dto.product,
+        });
+
+        if (!tenant)
+          throw new NotFoundException(
+            "Tenant not found for the selected product"
+          );
+      }
+
+      /** ------------------------------------------------------
+       * 6. Generate password (replace with random if needed)
+       * ------------------------------------------------------ */
+      // const randomPassword = randomBytes(4).toString("hex").slice(0, 8);
+      const randomPassword = "Admin123"; // for testing
+      console.log("Generated Password:", randomPassword);
+
+      /** ------------------------------------------------------
+       * 7. Create the user
+       * ------------------------------------------------------ */
+      await this.userModel.create({
+        ...dto,
+        password: randomPassword,
+        tenantId: logged.role === "super-admin" ? tenant._id : logged.tenant,
+        roleMasterId: roleMaster._id,
+        isVerified: true,
+      });
+
+      /** ------------------------------------------------------
+       * 8. (Optional) Send password via email
+       * ------------------------------------------------------ */
+      // await this.mailService.sendPasswordEmail(dto.email, randomPassword);
+
+      return { message: "User created successfully" };
+    } catch (error) {
+      console.error("Create User Error:", error?.message || error);
+
+      // Re-throw known NestJS exception
+      if (error instanceof HttpException) throw error;
+
+      // Wrap unknown error
+      throw new BadRequestException(error?.message || "User creation failed!");
     }
-
-    const listOfRoles = await this.roleModel.findOne({ name: dto.role });
-    console.log(listOfRoles, tenant, tenant?._id, 'listOfRoles');
-
-    // Generate random 8 character password
-    const randomPassword = randomBytes(4).toString('hex').substring(0, 8);
-
-    console.log(randomPassword, 'hashedPassword');
-    await this.userModel.create({
-      ...dto,
-      password: randomPassword,
-      tenantId: logged.role === 'super-admin' ? tenant?._id : logged?.tenantId,
-      roleMasterId: listOfRoles?._id,
-    });
-
-    // TODO: Send password to email via mailService
-    // await this.mailService.sendPasswordEmail(user.email, randomPassword);
-
-    // 🔐 Create token
-    // const token = randomBytes(32).toString('hex');
-    // await this.verificationModel.create({ userId: user._id, token });
-
-    // // 🔗 Create verification link
-    // const link = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
-
-    // // 📧 Send email
-    // await this.mailService.sendVerificationEmail(user.email, link);
-
-    return { message: 'User created, verification email sent' };
   }
 }
