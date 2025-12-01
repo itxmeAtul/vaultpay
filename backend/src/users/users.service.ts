@@ -29,60 +29,47 @@ export class UsersService {
   ) {}
 
   async createUser(dto: CreateUserDto, logged: any) {
-    // super-admin can create tenant admin
-    console.log(logged,"rolsl")
-    if (logged.role !== 'super-admin') {
-      throw new ForbiddenException('Only super-admin can create tenant admins');
-    }
+    console.log(logged, 'ells');
     const userExists = await this.userModel.findOne({
       username: dto.username,
     });
 
     if (userExists) throw new BadRequestException('User already exists');
 
-    const user = await this.userModel.create({
+    let tenant;
+    // super-admin can create tenant admin
+    if (logged.role === 'super-admin') {
+      const productType = dto.product;
+      tenant = await this.tenantModel.findOne({ productType: productType });
+    }
+
+    const listOfRoles = await this.roleModel.findOne({ name: dto.role });
+    console.log(listOfRoles, tenant, tenant?._id, 'listOfRoles');
+
+    // Generate random 8 character password
+    const randomPassword = randomBytes(4).toString('hex').substring(0, 8);
+
+    console.log(randomPassword, 'hashedPassword');
+    await this.userModel.create({
       ...dto,
-      tenantId: logged?.tenantId ?? "69298389b15e02617aa87048",
+      password: randomPassword,
+      tenantId: logged.role === 'super-admin' ? tenant?._id : logged?.tenantId,
+      roleMasterId: listOfRoles?._id,
     });
 
-    // If created user is tenant admin:
-    if (dto.role === 'admin') {
-      await this.setupTenantRolesForAdmin(user);
-    }
+    // TODO: Send password to email via mailService
+    // await this.mailService.sendPasswordEmail(user.email, randomPassword);
 
     // 🔐 Create token
-    const token = randomBytes(32).toString('hex');
-    await this.verificationModel.create({ userId: user._id, token });
+    // const token = randomBytes(32).toString('hex');
+    // await this.verificationModel.create({ userId: user._id, token });
 
-    // 🔗 Create verification link
-    const link = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
+    // // 🔗 Create verification link
+    // const link = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
 
-    // 📧 Send email
-    await this.mailService.sendVerificationEmail(user.email, link);
+    // // 📧 Send email
+    // await this.mailService.sendVerificationEmail(user.email, link);
 
     return { message: 'User created, verification email sent' };
-  }
-
-  async setupTenantRolesForAdmin(user: User) {
-    const templates = await this.rolesService.getAllTemplates();
-
-    let managerRoleMasterId: Types.ObjectId | null = null;
-
-    // clone templates to tenant roles
-    for (const t of templates) {
-      const newRole = await this.rolesService.createRole(user.tenantId, {
-        name: t.name,
-        permissions: t.permissions,
-      });
-
-      if (t.name === 'manager') {
-        managerRoleMasterId = newRole._id;
-      }
-    }
-
-    if (managerRoleMasterId) {
-      user.roleMasterId = managerRoleMasterId;
-      await user.save();
-    }
   }
 }

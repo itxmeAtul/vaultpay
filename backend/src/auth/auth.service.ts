@@ -50,7 +50,9 @@ export class AuthService {
       { expiresIn: '7d', secret: process.env.JWT_REFRESH_SECRET },
     );
 
-    const roleMasterDtls = await this.roleModel.findById(user.roleMasterId);
+    const roleMasterDtls = await this.roleModel.findById(
+      user.roleMasterId?._id,
+    );
 
     const payload = {
       sub: user._id,
@@ -117,11 +119,7 @@ export class AuthService {
       return {
         access_token: accessToken,
         refresh_token: newRefreshToken,
-        // user: {
-        //   id: user.id,
-        //   email: user.email,
-        //   username: user.username,
-        // },
+
         user: {
           id: user._id,
           username: user.username,

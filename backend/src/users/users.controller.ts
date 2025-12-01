@@ -13,6 +13,7 @@ export class CreateUserDto {
   name: string;
   email: string;
   role: 'super-admin' | 'admin' | 'user';
+  product?: string;
 }
 @Controller('users')
 @UseGuards(JwtAuthGuard)

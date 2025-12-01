@@ -19,7 +19,7 @@ export class User extends Document {
   @Prop({ required: true })
   email: string;
 
-  @Prop({ enum: ['super-admin', 'admin', 'user'], default: 'user' })
+  @Prop({required:true})
   role: string;
 
   @Prop({ type: Types.ObjectId, ref: 'RoleMaster' })
