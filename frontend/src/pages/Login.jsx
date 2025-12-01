@@ -3,6 +3,7 @@ import { Eye, EyeOff, Loader2 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { api } from "@/utils/api";
 import { useNavigate } from "react-router-dom";
+import { login } from "@/apiservices/auth.service";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -39,25 +40,21 @@ export default function Login() {
   =================================================== */
   const checkTokenValid = async (token) => {
     try {
-      const res = await api("/api/auth/validate", {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      const data = await res.json();
-
-      if (res.ok && data.valid) {
+      const res = await api.get("auth/validate");
+      console.log(
+        res.statusText,
+        res.data,
+        res.statusText == "200",
+        res.data?.valid
+      );
+      if (res.statusText == "OK" && res.data?.valid) {
         navigate("/dashboard");
       } else {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
+        localStorage.clear();
         setCheckingAuth(false); // show login
       }
     } catch {
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
+      localStorage.clear();
       setCheckingAuth(false);
     }
   };
@@ -74,21 +71,7 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const res = await api("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setLoading(false);
-        return setError(data.error || "Invalid login");
-      }
-
-      localStorage.setItem("token", data.access_token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+      const response = await login(username, password);
 
       if (remember) {
         localStorage.setItem("rememberUsername", username);
@@ -96,13 +79,15 @@ export default function Login() {
         localStorage.removeItem("rememberUsername");
       }
 
-      toast.success("Login successful!");
-
-      setTimeout(() => {
-        window.location.href = "/dashboard";
-      }, 800);
+      if (response) {
+        toast.success("Login successful!");
+        setTimeout(() => {
+          window.location.href = "/dashboard";
+        }, 800);
+      }
     } catch (err) {
-      setError("Login failed. Try again.");
+      console.log(err);
+      setError(err.response?.data?.error || "Login failed. Try again.");
     }
 
     setLoading(false);
@@ -112,35 +97,28 @@ export default function Login() {
      SIGNUP
   =================================================== */
   const handleSignup = async () => {
-    setError("");
-
-    if (!username || !password) return setError("All fields required.");
-    if (password.length < 4)
-      return setError("Password must be at least 4 characters.");
-
-    setLoading(true);
-
-    try {
-      const res = await api("/api/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setLoading(false);
-        return setError(data.error || "Signup failed.");
-      }
-
-      toast.success("Signup successful! Please login.");
-      setIsSignup(false);
-    } catch (err) {
-      setError("Signup failed.");
-    }
-
-    setLoading(false);
+    // setError("");
+    // if (!username || !password) return setError("All fields required.");
+    // if (password.length < 4)
+    //   return setError("Password must be at least 4 characters.");
+    // setLoading(true);
+    // try {
+    //   const res = await api("/api/auth/signup", {
+    //     method: "POST",
+    //     headers: { "Content-Type": "application/json" },
+    //     body: JSON.stringify({ username, password }),
+    //   });
+    //   const data = await res.json();
+    //   if (!res.ok) {
+    //     setLoading(false);
+    //     return setError(data.error || "Signup failed.");
+    //   }
+    //   toast.success("Signup successful! Please login.");
+    //   setIsSignup(false);
+    // } catch (err) {
+    //   setError("Signup failed.");
+    // }
+    // setLoading(false);
   };
 
   /* ===================================================

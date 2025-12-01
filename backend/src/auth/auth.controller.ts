@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Headers, Post, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -19,5 +20,10 @@ export class AuthController {
   validate(@Headers('authorization') auth: string) {
     const token = auth?.replace('Bearer ', '');
     return this.authService.validateToken(token);
+  }
+
+  @Post('refresh')
+  async refresh(@Body() body: RefreshTokenDto) {
+    return this.authService.refresh(body.refresh_token);
   }
 }

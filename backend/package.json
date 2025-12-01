@@ -18,7 +18,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "seed:roles": "ts-node -r tsconfig-paths/register seeds/role-templates.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -28,6 +29,7 @@
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
     "bcrypt": "^6.0.0",
+    "class-validator": "^0.14.3",
     "dotenv": "^17.2.3",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.20.1",

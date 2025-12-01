@@ -17,13 +17,27 @@ export class TenantController {
   constructor(private readonly tenantService: TenantService) {}
 
   @Post()
-  create(@Body() body: { name: string; code: string }) {
+  create(
+    @Body()
+    body: {
+      name: string;
+      code: string;
+      productType: string;
+      logo: string;
+      address: string;
+    },
+  ) {
     return this.tenantService.createTenant(body);
   }
 
   @Get()
   findAll() {
     return this.tenantService.findAllTenants();
+  }
+
+  @Get(':id')
+  getOne(@Param('id') id: string) {
+    return this.tenantService.getOne(id);
   }
 
   @Patch('disable/:id')

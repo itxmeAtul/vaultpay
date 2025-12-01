@@ -11,10 +11,19 @@ export class User extends Document {
   password: string;
 
   @Prop({ required: true })
+  name: string;
+
+  @Prop({ required: true })
+  mobileNo: string;
+
+  @Prop({ required: true })
   email: string;
 
-  @Prop({ enum: ['super-admin', 'admin', 'user'], default: 'user' })
+  @Prop({required:true})
   role: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'RoleMaster' })
+  roleMasterId: Types.ObjectId;
 
   @Prop({ type: Types.ObjectId, ref: 'Tenant', required: true })
   tenantId: Types.ObjectId;

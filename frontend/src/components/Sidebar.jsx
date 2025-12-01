@@ -8,7 +8,11 @@ import {
   FileCode,
   FolderOpen,
   BarChart3,
+  CreditCard,
+  User,
+  Settings,
 } from "lucide-react";
+import { logoutSession } from "@/apiservices/auth.service";
 
 export default function Sidebar({ children }) {
   const [open, setOpen] = useState(false);
@@ -35,9 +39,7 @@ export default function Sidebar({ children }) {
   useEffect(() => setOpen(false), [location.pathname]);
 
   const logout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    window.location.href = "/";
+    logoutSession();
   };
 
   return (
