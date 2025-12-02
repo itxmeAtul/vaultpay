@@ -1,20 +1,18 @@
 import React from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-
-import Login from "./pages/Login.jsx";
-import Dashboard from "./pages/Dashboard.jsx";
-
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import Sidebar from "./components/Sidebar.jsx";
-import Transactions from "./pages/Transactions.jsx";
-import Profile from "./pages/Profile.jsx";
-import Navbar from "./components/Navbar.jsx";
+import Login from "./pages/Auth/Login.jsx";
+import Dashboard from "./pages/dashboard/Dashboard.jsx";
+import Profile from "./pages/profile/Profile.jsx";
+import { UsersListing } from "./pages/users/UsersListing.jsx";
+import GuestRoute from "./components/GuestRoute.jsx";
 
 export default function App() {
   // Define all protected routes here
   const protectedRoutes = [
     { path: "/dashboard", element: <Dashboard /> },
-    { path: "/transactions", element: <Transactions /> },
+    { path: "/users", element: <UsersListing /> },
     { path: "/profile", element: <Profile /> },
     // { path: "/settings", element: <Setting /> },
   ];
@@ -23,7 +21,15 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         {/* Public Route */}
-        <Route path="/" element={<Login />} />
+        {/* <Route path="/" element={<Login />} /> */}
+        <Route
+          path="/"
+          element={
+            <GuestRoute>
+              <Login />
+            </GuestRoute>
+          }
+        />
 
         {/* Protected Routes Loop */}
         {protectedRoutes.map(({ path, element }) => (

@@ -1,22 +1,31 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
-import { SuperAdminGuard } from "src/common/gaurds/super-admin.guard";
-import { UsersService } from "./users.service";
-import { TenantGuard } from "src/common/gaurds/tenant.gaurd";
-import { RequireRole } from "src/common/decorators/roles.decorator";
-import { RolesGuard } from "src/common/gaurds/roles.guard";
-import { Tenant } from "src/common/decorators/tenant.decorator";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { SuperAdminGuard } from 'src/common/gaurds/super-admin.guard';
+import { UsersService } from './users.service';
+import { TenantGuard } from 'src/common/gaurds/tenant.gaurd';
+import { RequireRole } from 'src/common/decorators/roles.decorator';
+import { RolesGuard } from 'src/common/gaurds/roles.guard';
+import { Tenant } from 'src/common/decorators/tenant.decorator';
 
 export class CreateUserDto {
   username: string;
   password: string;
   name: string;
   email: string;
-  role: "super-admin" | "admin" | "user";
+  role: 'super-admin' | 'admin' | 'user';
   product?: string;
   mobileNo: string;
 }
-@Controller("users")
+@Controller('users')
 @UseGuards(JwtAuthGuard)
 export class UsersController {
   constructor(private readonly userService: UsersService) {}
@@ -26,8 +35,24 @@ export class UsersController {
     return this.userService.createUser(dto, req.user);
   }
 
-  // @Get()
-  // getAll(@Req() req) {
-  //   return this.userService.getAll(req.user);
-  // }
+  @Get()
+  // @UseGuards(TenantGuard, RolesGuard)
+  // @RequireRole('admin', 'super-admin')
+  getAll(
+    @Req() req,
+    @Tenant() tenant: string,
+    @Query() query: { page?: number; limit?: number; search?: string },
+  ) {
+    const { page = 1, limit = 10, search = '' } = query;
+    return this.userService.getAll(req.user, tenant, {
+      page: parseInt(page as any),
+      limit: parseInt(limit as any),
+      search,
+    });
+  }
+
+  @Delete('batch')
+  deleteMany() {
+    return this.userService.deleteMany();
+  }
 }

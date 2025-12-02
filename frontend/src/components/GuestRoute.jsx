@@ -1,10 +1,10 @@
 import { useSelector } from "react-redux";
 import { Navigate } from "react-router-dom";
 
-export default function ProtectedRoute({ children }) {
+export default function GuestRoute({ children }) {
   const { isLoggedIn, sessionChecking } = useSelector((s) => s.auth);
 
   if (sessionChecking) return null;
 
-  return isLoggedIn ? children : <Navigate to="/" />;
+  return isLoggedIn ? <Navigate to="/dashboard" /> : children;
 }
