@@ -11,7 +11,7 @@ export class TenantGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest();
     const user = req.user; // set by JwtStrategy
-
+console.log(req,"sll")
     if (!user) throw new UnauthorizedException('Invalid token');
 
     // 💡 Super Admin does NOT require tenant
