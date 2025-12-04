@@ -4,12 +4,15 @@ import toast, { Toaster } from "react-hot-toast";
 import { api } from "@/utils/api";
 import { useNavigate } from "react-router-dom";
 import { login } from "@/apiservices/auth.service";
+import { useDispatch } from "react-redux";
+import { authenticateUser } from "@/redux/reducers/authSlice";
+import { getToken } from "@/utils/cookie";
 
 export default function Login() {
   const navigate = useNavigate();
   const [isSignup, setIsSignup] = useState(false);
   const [forgotMode, setForgotMode] = useState(false);
-
+  const dispatch = useDispatch();
   // Form states
   const [username, setUsername] = useState(
     localStorage.getItem("rememberUsername") || ""
@@ -62,32 +65,74 @@ export default function Login() {
   /* ===================================================
      LOGIN
   =================================================== */
+  // const handleLogin = async () => {
+  //   setError("");
+
+  //   if (!username || !password)
+  //     return setError("Username and password are required.");
+
+  //   setLoading(true);
+
+  //   try {
+  //     const response = await login(username, password);
+
+  //     if (remember) {
+  //       localStorage.setItem("rememberUsername", username);
+  //     } else {
+  //       localStorage.removeItem("rememberUsername");
+  //     }
+
+  //     if (response) {
+  //       toast.success("Login successful!");
+  //       setTimeout(() => {
+  //         window.location.href = "/dashboard";
+  //       }, 800);
+  //     }
+  //   } catch (err) {
+  //     console.log(err);
+  //     setError(err.response?.data?.error || "Login failed. Try again.");
+  //   }
+
+  //   setLoading(false);
+  // };
   const handleLogin = async () => {
     setError("");
 
-    if (!username || !password)
-      return setError("Username and password are required.");
+    if (!username || !password) {
+      setError("Username and password are required.");
+      return;
+    }
 
     setLoading(true);
 
     try {
-      const response = await login(username, password);
+      const resultAction = await dispatch(
+        authenticateUser({
+          username,
+          password,
+          rememberMe: remember,
+        })
+      );
 
-      if (remember) {
-        localStorage.setItem("rememberUsername", username);
-      } else {
-        localStorage.removeItem("rememberUsername");
+      // ❌ Login failed → rejected
+      if (authenticateUser.rejected.match(resultAction)) {
+        const err = resultAction.payload;
+        setError(err?.errorMessage || "Login failed. Try again.");
+        toast.error(err?.errorMessage || "Invalid credentials");
+        setLoading(false);
+        return;
       }
 
-      if (response) {
-        toast.success("Login successful!");
-        setTimeout(() => {
-          window.location.href = "/dashboard";
-        }, 800);
-      }
+      // ✅ Login success
+      toast.success("Login successful!");
+
+      // Optional redirect
+      setTimeout(() => {
+        window.location.href = "/dashboard";
+      }, 800);
     } catch (err) {
       console.log(err);
-      setError(err.response?.data?.error || "Login failed. Try again.");
+      setError("Login failed. Try again.");
     }
 
     setLoading(false);
@@ -134,7 +179,7 @@ export default function Login() {
      AUTH CHECK TIMER + API VERIFY
   =================================================== */
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = getToken();
 
     const interval = setInterval(() => {
       setTimer((prev) => {

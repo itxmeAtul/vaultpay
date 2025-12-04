@@ -1,90 +1,66 @@
-// import axios from "axios";
-
-// export const api = axios.create({
-//   baseURL: "/api",
-//   headers: {
-//     "Content-Type": "application/json",
-//   },
-// });
-
-// // Attach token automatically on every request
-// api.interceptors.request.use((config) => {
-//   const token = localStorage.getItem("token");
-//   if (token) {
-//     config.headers.Authorization = `Bearer ${token}`;
-//   }
-//   return config;
-// });
-
 import axios from "axios";
-import { refreshAccessToken } from "./refreshToken";
-import toast from "react-hot-toast";
+import { store } from "@/redux/store";
+import { refreshTokenThunk, forceLogout } from "@/redux/reducers/authSlice";
+import { getToken } from "@/utils/cookie";
 
-export const api = axios.create({
+const api = axios.create({
   baseURL: "/api",
-  timeout: 15000,
-  headers: { "Content-Type": "application/json" },
+  withCredentials: true,
 });
 
-// ---------------------------
+// ---------------------
 // REQUEST INTERCEPTOR
-// ---------------------------
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
+// ---------------------
+api.interceptors.request.use((config) => {
+  const token = getToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
 
-// --------------------------------
-// RESPONSE INTERCEPTOR (AUTO REFRESH)
-// --------------------------------
+// ---------------------
+// RESPONSE INTERCEPTOR
+// ---------------------
 let refreshing = false;
-let failedQueue = [];
+let queue = [];
 
-const processQueue = (error, token = null) => {
-  failedQueue.forEach((p) => {
-    if (token) p.resolve(token);
-    else p.reject(error);
+const processQueue = (err, newToken = null) => {
+  queue.forEach((p) => {
+    if (err) p.reject(err);
+    else p.resolve(newToken);
   });
-
-  failedQueue = [];
+  queue = [];
 };
 
 api.interceptors.response.use(
-  (response) => response,
+  (res) => res,
   async (error) => {
     const original = error.config;
 
-    // If unauthorized (token expired)
+    // Access Token Expired
     if (error.response?.status === 401 && !original._retry) {
+      original._retry = true;
+
       if (refreshing) {
-        return new Promise(function (resolve, reject) {
-          failedQueue.push({ resolve, reject });
-        })
-          .then((token) => {
-            original.headers.Authorization = "Bearer " + token;
-            return api(original);
-          })
-          .catch((err) => Promise.reject(err));
+        return new Promise((resolve, reject) => {
+          queue.push({ resolve, reject });
+        }).then((newToken) => {
+          original.headers.Authorization = `Bearer ${newToken}`;
+          return api(original);
+        });
       }
 
-      original._retry = true;
       refreshing = true;
 
-      const newToken = await refreshAccessToken();
+      // Call RTK thunk to refresh token
+      const result = await store.dispatch(refreshTokenThunk());
 
-      if (!newToken && window.location.pathname !== "/") {
+      if (refreshTokenThunk.rejected.match(result)) {
         refreshing = false;
-        localStorage.clear();
-        window.location.href = "/";
+        store.dispatch(forceLogout());
         return Promise.reject(error);
       }
 
+      const newToken = result.payload.token;
       processQueue(null, newToken);
       refreshing = false;
 
@@ -92,10 +68,9 @@ api.interceptors.response.use(
       return api(original);
     }
 
-    // Optional global error toast
-    if (window.location.pathname !== "/")
-      toast.error(error.response?.data?.message || "Something went wrong");
-
     return Promise.reject(error);
   }
 );
+
+export default api;
+export { api };

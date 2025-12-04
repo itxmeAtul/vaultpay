@@ -72,6 +72,8 @@ export class AuthService {
         tenant: tenantDetails?.name,
         tenantId: user.tenantId?._id ?? null,
         email: user.email,
+        name: user.name,
+        mobileNo: user.mobileNo,
       },
     };
   }
@@ -127,6 +129,8 @@ export class AuthService {
           tenant: tenantDetails?.name,
           tenantId: user.tenantId?._id ?? null,
           email: user.email,
+          name: user.name,
+          mobileNo: user.mobileNo,
         },
       };
     } catch (error) {

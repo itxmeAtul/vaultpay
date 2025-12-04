@@ -19,7 +19,7 @@ export class User extends Document {
   @Prop({ required: true })
   email: string;
 
-  @Prop({required:true})
+  @Prop({ required: true })
   role: string;
 
   @Prop({ type: Types.ObjectId, ref: 'RoleMaster' })
@@ -30,6 +30,12 @@ export class User extends Document {
 
   @Prop({ default: false })
   isVerified: boolean;
+
+  @Prop({ default: false, type: Types.ObjectId, ref: 'User' })
+  createdBy: Types.ObjectId;
+
+  @Prop({ default: false })
+  updatedBy: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

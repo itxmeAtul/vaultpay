@@ -13,9 +13,12 @@ import {
   Settings,
 } from "lucide-react";
 import { logoutSession } from "@/apiservices/auth.service";
+import { useDispatch } from "react-redux";
+import { logoutAndClearToken } from "@/redux/reducers/authSlice";
 
 export default function Sidebar({ children }) {
   const [open, setOpen] = useState(false);
+  const dispatch = useDispatch();
   const location = useLocation();
 
   const user = JSON.parse(localStorage.getItem("user") || "{}");
@@ -39,7 +42,7 @@ export default function Sidebar({ children }) {
   useEffect(() => setOpen(false), [location.pathname]);
 
   const logout = () => {
-    logoutSession();
+    dispatch(logoutAndClearToken());
   };
 
   return (
