@@ -1,4 +1,5 @@
 const tokenKey = "x-auth-token";
+const permissionKey = "x-permissions";
 import Cookies from "js-cookie";
 
 export const setToken = (token) => {
@@ -60,5 +61,33 @@ export const clearAuthData = () => {
     }
   } catch (error) {
     throw Error(`Failed to remove authdata: ${error}`);
+  }
+};
+
+export const setPermissionData = (PermissionData) => {
+  try {
+    if (sessionStorage) {
+      sessionStorage.setItem(permissionKey, JSON.stringify(PermissionData));
+    }
+  } catch (error) {
+    throw Error(`Failed to set Permissiondata: ${error}`);
+  }
+};
+export const getPermissionData = () => {
+  try {
+    if (sessionStorage[permissionKey]) {
+      return JSON.parse(sessionStorage.getItem(permissionKey));
+    }
+  } catch (error) {
+    throw Error(`Failed to get Permissiondata: ${error}`);
+  }
+};
+export const clearPermissionData = () => {
+  try {
+    if (sessionStorage[permissionKey]) {
+      return sessionStorage.removeItem(permissionKey);
+    }
+  } catch (error) {
+    throw Error(`Failed to remove Permissiondata: ${error}`);
   }
 };

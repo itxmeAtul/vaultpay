@@ -4,9 +4,9 @@
  *
  * Alternatively, call RoleTemplatesService.createManyIfNotExists(...) from AppModule on bootstrap.
  */
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from 'src/app.module';
-import { RolesService } from '../src/roles/roles.service';
+import { NestFactory } from "@nestjs/core";
+import { AppModule } from "src/app.module";
+import { RolesService } from "../src/roles/roles.service";
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(AppModule);
@@ -14,8 +14,8 @@ async function bootstrap() {
 
   const defaults = [
     {
-      name: 'manager',
-      description: 'Tenant manager - full access',
+      name: "admin",
+      description: "Tenant Admin - full access",
       permissions: {
         users: { read: true, write: true, update: true, delete: true },
         menus: { read: true, write: true, update: true, delete: true },
@@ -29,8 +29,23 @@ async function bootstrap() {
       },
     },
     {
-      name: 'cashier',
-      description: 'Cashier - billing & orders',
+      name: "manager",
+      description: "Tenant manager - full access",
+      permissions: {
+        users: { read: true, write: true, update: true, delete: true },
+        menus: { read: true, write: true, update: true, delete: true },
+        categories: { read: true, write: true, update: true, delete: true },
+        orders: { read: true, write: true, update: true, delete: true },
+        billing: { read: true, write: true },
+        kitchen: { read: true, update: true },
+        delivery: { read: true },
+        settings: { read: true, write: true },
+        dashboard: { read: true },
+      },
+    },
+    {
+      name: "cashier",
+      description: "Cashier - billing & orders",
       permissions: {
         billing: { read: true, write: true },
         orders: { read: true, write: true },
@@ -39,24 +54,24 @@ async function bootstrap() {
       },
     },
     {
-      name: 'chef',
-      description: 'Chef - kitchen and cooking status',
+      name: "chef",
+      description: "Chef - kitchen and cooking status",
       permissions: {
         kitchen: { read: true, update: true },
         orders: { read: true, update: true },
       },
     },
     {
-      name: 'waiter',
-      description: 'Waiter - create and view orders',
+      name: "waiter",
+      description: "Waiter - create and view orders",
       permissions: {
         orders: { read: true, write: true },
         menus: { read: true },
       },
     },
     {
-      name: 'delivery-boy',
-      description: 'Delivery - delivery updates only',
+      name: "delivery-boy",
+      description: "Delivery - delivery updates only",
       permissions: {
         delivery: { read: true, update: true },
         orders: { read: true },

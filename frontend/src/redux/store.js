@@ -1,7 +1,7 @@
 import { configureStore } from "@reduxjs/toolkit";
 import reducers from "./reducers";
 import { setSessionExpired } from "./reducers/sessionSlice";
-import api from "@/utils/api";
+import api, { injectStore } from "@/utils/api";
 import { getToken } from "@/utils/cookie"; // you forgot this
 
 const devMode = process.env.NODE_ENV === "development";
@@ -45,3 +45,4 @@ export const store = configureStore({
       },
     }).concat(tokenMiddleware),
 });
+injectStore(store);

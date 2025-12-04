@@ -1,19 +1,18 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, use } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   Menu,
   X,
   LogOut,
   LayoutDashboard,
-  FileCode,
   FolderOpen,
-  BarChart3,
   CreditCard,
   User,
   Settings,
+  User2,
 } from "lucide-react";
-import { logoutSession } from "@/apiservices/auth.service";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
+import { hasPermission } from "@/utils/permission";
 import { logoutAndClearToken } from "@/redux/reducers/authSlice";
 
 export default function Sidebar({ children }) {
@@ -21,10 +20,10 @@ export default function Sidebar({ children }) {
   const dispatch = useDispatch();
   const location = useLocation();
 
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const user = useSelector((s) => s.auth.authData.user) || {};
   const tenantName = user?.tenant;
-  const initials = user?.username
-    ? user.username
+  const initials = user?.name
+    ? user.name
         .split(" ")
         .map((w) => w[0])
         .join("")
@@ -36,6 +35,25 @@ export default function Sidebar({ children }) {
       label: "Dashboard",
       path: "/dashboard",
       icon: <LayoutDashboard size={18} />,
+      permission: { module: "dashboard", action: "read" }, // optional
+    },
+    {
+      label: "Users",
+      path: "/users",
+      icon: <User2 size={18} />,
+      permission: { module: "users", action: "read" },
+    },
+    {
+      label: "Kitchen",
+      path: "/kitchen",
+      icon: <FolderOpen size={18} />,
+      permission: { module: "kitchen", action: "read" },
+    },
+    {
+      label: "Orders",
+      path: "/orders",
+      icon: <CreditCard size={18} />,
+      permission: { module: "orders", action: "read" },
     },
   ];
 
@@ -70,29 +88,35 @@ export default function Sidebar({ children }) {
             {initials}
           </div>
           <div>
-            <p className="font-semibold">{user.username || "User"}</p>
+            <p className="font-semibold">{user.name || "User"}</p>
             <p className="text-xs text-gray-600">{user.email}</p>
           </div>
         </div>
 
         {/* MENU */}
         <div className="flex-1">
-          {menu.map((m) => (
-            <NavLink
-              key={m.path}
-              to={m.path}
-              className={({ isActive }) =>
-                `flex items-center gap-3 p-2 mb-1 rounded transition ${
-                  isActive
-                    ? "bg-orange-600 text-white font-semibold"
-                    : "text-gray-700 hover:bg-orange-100 hover:text-orange-700"
-                }`
-              }
-            >
-              {m.icon}
-              {m.label}
-            </NavLink>
-          ))}
+          {menu
+            .filter(
+              (m) =>
+                !m.permission ||
+                hasPermission(m.permission.module, m.permission.action)
+            )
+            .map((m) => (
+              <NavLink
+                key={m.path}
+                to={m.path}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 p-2 mb-1 rounded transition ${
+                    isActive
+                      ? "bg-orange-600 text-white font-semibold"
+                      : "text-gray-700 hover:bg-orange-100 hover:text-orange-700"
+                  }`
+                }
+              >
+                {m.icon}
+                {m.label}
+              </NavLink>
+            ))}
         </div>
 
         {/* LOGOUT */}
@@ -133,22 +157,28 @@ export default function Sidebar({ children }) {
         </div>
 
         {/* MENU */}
-        {menu.map((m) => (
-          <NavLink
-            key={m.path}
-            to={m.path}
-            className={({ isActive }) =>
-              `flex items-center gap-3 p-2 mb-1 rounded transition ${
-                isActive
-                  ? "bg-orange-600 text-white font-semibold"
-                  : "text-gray-700 hover:bg-orange-100 hover:text-orange-700"
-              }`
-            }
-          >
-            {m.icon}
-            {m.label}
-          </NavLink>
-        ))}
+        {menu
+          .filter(
+            (m) =>
+              !m.permission ||
+              hasPermission(m.permission.module, m.permission.action)
+          )
+          .map((m) => (
+            <NavLink
+              key={m.path}
+              to={m.path}
+              className={({ isActive }) =>
+                `flex items-center gap-3 p-2 mb-1 rounded transition ${
+                  isActive
+                    ? "bg-orange-600 text-white font-semibold"
+                    : "text-gray-700 hover:bg-orange-100 hover:text-orange-700"
+                }`
+              }
+            >
+              {m.icon}
+              {m.label}
+            </NavLink>
+          ))}
 
         {/* LOGOUT */}
         <button

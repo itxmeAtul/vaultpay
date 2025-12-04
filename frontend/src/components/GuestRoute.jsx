@@ -2,9 +2,11 @@ import { useSelector } from "react-redux";
 import { Navigate } from "react-router-dom";
 
 export default function GuestRoute({ children }) {
-  const { isLoggedIn, sessionChecking } = useSelector((s) => s.auth);
+  const { isLoggedIn } = useSelector((s) => s.auth);
 
-  if (sessionChecking) return null;
+  if (isLoggedIn) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
-  return isLoggedIn ? <Navigate to="/dashboard" /> : children;
+  return children;
 }
