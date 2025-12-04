@@ -5,9 +5,9 @@ import {
   BadRequestException,
   InternalServerErrorException,
   ForbiddenException,
-} from "@nestjs/common";
-import { InjectModel } from "@nestjs/mongoose";
-import { Model, Types } from "mongoose";
+} from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
 import {
   Order,
   OrderDocument,
@@ -15,12 +15,15 @@ import {
   OrderStatus,
   // optional explicit item types if you export them from schema
   RestaurantOrderItem,
-} from "./schemas/order.schema";
-import { CreateOrderDto } from "./dto/create-order.dto";
-import { UpdateOrderItemStatusDto } from "./dto/update-order-item-status.dto";
-import { RemakeOrderItemDto } from "./dto/remake-order-item.dto";
-import { TokenCounter } from "src/token-counters/schemas/token-counter.schema";
-import { BusinessType } from "src/tenants/tenant.schema";
+} from './schemas/order.schema';
+import { CreateOrderDto } from './dto/create-order.dto';
+import {
+  UpdateOrderItemStatusDto,
+  UpdateOrderStatusDto,
+} from './dto/update-order-item-status.dto';
+import { RemakeOrderItemDto } from './dto/remake-order-item.dto';
+import { TokenCounter } from 'src/token-counters/schemas/token-counter.schema';
+import { BusinessType } from 'src/tenants/tenant.schema';
 
 /**
  * Helper: safely read the status from an order item.
@@ -30,7 +33,7 @@ import { BusinessType } from "src/tenants/tenant.schema";
 function getItemStatus(item: any): OrderItemStatus {
   const s = (item as any).status;
   if (
-    typeof s === "string" &&
+    typeof s === 'string' &&
     Object.values(OrderItemStatus).includes(s as OrderItemStatus)
   ) {
     return s as OrderItemStatus;
@@ -47,7 +50,7 @@ export class OrdersService {
 
     // used for atomic token increments; required if you want counter-based tokens
     @InjectModel(TokenCounter.name)
-    private readonly counterModel: Model<TokenCounter>
+    private readonly counterModel: Model<TokenCounter>,
   ) {}
 
   private buildItemsForBusinessType(businessType: string, rawItems: any[]) {
@@ -113,7 +116,7 @@ export class OrdersService {
             scheduledTime: i.scheduledTime
               ? new Date(i.scheduledTime)
               : undefined,
-            status: i.status ?? "pending",
+            status: i.status ?? 'pending',
           };
         });
 
@@ -139,9 +142,69 @@ export class OrdersService {
 
       default:
         throw new BadRequestException(
-          `Unsupported businessType: ${businessType}`
+          `Unsupported businessType: ${businessType}`,
         );
     }
+  }
+
+  private updateItemState(item: any, dto: UpdateOrderItemStatusDto) {
+    const current = item.status;
+    const next = dto.status;
+
+    const qty = item.qty;
+    const prepared = dto.preparedQty ?? item.preparedQty;
+
+    // --- VALIDATION ---
+    const INVALID = [
+      [OrderItemStatus.DELIVERED, OrderItemStatus.IN_PROGRESS],
+      [OrderItemStatus.CANCELLED, OrderItemStatus.IN_PROGRESS],
+      [OrderItemStatus.REJECTED, OrderItemStatus.IN_PROGRESS],
+      [OrderItemStatus.COOKED, OrderItemStatus.PENDING],
+    ];
+    if (INVALID.some(([a, b]) => a === current && b === next)) {
+      throw new BadRequestException(
+        `Cannot change item from ${current} to ${next}`,
+      );
+    }
+
+    // --- PARTIAL COOK LOGIC ---
+    if (next === OrderItemStatus.IN_PROGRESS) {
+      item.status = OrderItemStatus.IN_PROGRESS;
+      return;
+    }
+
+    if (next === OrderItemStatus.PARTIAL_COOKED) {
+      if (prepared <= 0 || prepared >= qty)
+        throw new BadRequestException(
+          'Partial cooked requires 0 < prepared < qty',
+        );
+
+      item.status = OrderItemStatus.PARTIAL_COOKED;
+      item.preparedQty = prepared;
+      return;
+    }
+
+    // FULL COOK
+    if (next === OrderItemStatus.COOKED) {
+      item.status = OrderItemStatus.COOKED;
+      item.preparedQty = qty;
+      return;
+    }
+
+    // DELIVERED
+    if (next === OrderItemStatus.DELIVERED) {
+      item.status = OrderItemStatus.DELIVERED;
+      item.preparedQty = qty;
+      return;
+    }
+
+    // CANCEL / REJECT
+    if ([OrderItemStatus.CANCELLED, OrderItemStatus.REJECTED].includes(next)) {
+      item.status = next;
+      return;
+    }
+
+    throw new BadRequestException(`Unhandled item status transition: ${next}`);
   }
 
   /**
@@ -161,28 +224,40 @@ export class OrdersService {
 
     // all canceled or rejected => order cancelled
     const allCancelledOrRejected = statuses.every((s) =>
-      [OrderItemStatus.CANCELLED, OrderItemStatus.REJECTED].includes(s)
+      [OrderItemStatus.CANCELLED, OrderItemStatus.REJECTED].includes(s),
     );
     if (allCancelledOrRejected) {
       order.status = OrderStatus.CANCELLED;
       return;
     }
 
-    const anyPendingOrInProgress = statuses.some((s) =>
-      [OrderItemStatus.PENDING, OrderItemStatus.IN_PROGRESS].includes(s)
-    );
-    const anyCookedOrDelivered = statuses.some((s) =>
-      [OrderItemStatus.COOKED, OrderItemStatus.DELIVERED].includes(s)
-    );
+    // check if any item has partial preparation (preparedQty < qty)
+    const hasPartialPrep = items.some((item: any) => {
+      const qty = Number(item.qty ?? 1);
+      const preparedQty = Number(item.preparedQty ?? 0);
+      return preparedQty > 0 && preparedQty < qty;
+    });
 
-    if (anyPendingOrInProgress && anyCookedOrDelivered) {
-      order.status = OrderStatus.PARTIAL_PENDING;
-    } else if (!anyPendingOrInProgress && anyCookedOrDelivered) {
-      // everything cooked/delivered or other final states
-      order.status = OrderStatus.READY;
-    } else {
-      order.status = OrderStatus.PENDING;
+    const allDelivered = statuses.every((s) => s === OrderItemStatus.DELIVERED);
+    if (allDelivered) {
+      order.status = OrderStatus.DELIVERED;
+      return;
     }
+    const anyPartial = statuses.includes(OrderItemStatus.PARTIAL_COOKED);
+    const anyInProgress = statuses.includes(OrderItemStatus.IN_PROGRESS);
+    const anyCooked = statuses.includes(OrderItemStatus.COOKED);
+
+    if (anyPartial || anyInProgress) {
+      order.status = OrderStatus.PARTIAL_PENDING;
+      return;
+    }
+
+    if (anyCooked && !anyInProgress) {
+      order.status = OrderStatus.READY;
+      return;
+    }
+
+    order.status = OrderStatus.PENDING;
   }
 
   /**
@@ -196,7 +271,7 @@ export class OrdersService {
    */
   async create(tenantId: string, dto: CreateOrderDto): Promise<OrderDocument> {
     if (!dto.items || !Array.isArray(dto.items) || dto.items.length === 0) {
-      throw new BadRequestException("Order must contain at least one item");
+      throw new BadRequestException('Order must contain at least one item');
     }
 
     const session = await this.orderModel.db.startSession();
@@ -210,11 +285,11 @@ export class OrdersService {
           const counter = await this.counterModel.findOneAndUpdate(
             { _id: dto.counterId, tenantId: new Types.ObjectId(tenantId) },
             { $inc: { lastToken: 1 } },
-            { new: true, session }
+            { new: true, session },
           );
 
           if (!counter) {
-            throw new NotFoundException("Counter not found for tenant");
+            throw new NotFoundException('Counter not found for tenant');
           }
           tokenNumber = counter.lastToken;
         }
@@ -254,12 +329,12 @@ export class OrdersService {
 
         const items = this.buildItemsForBusinessType(
           dto.businessType,
-          dto.items
+          dto.items,
         );
 
         const grandTotal = items.reduce(
           (sum, it) => sum + Number((it as any).total || 0),
-          0
+          0,
         );
 
         const doc = new this.orderModel({
@@ -272,7 +347,7 @@ export class OrdersService {
           orderNumber: dto.orderNumber ?? `ORD-${Date.now()}`,
           status: OrderStatus.PENDING,
           items,
-          paymentMode: dto.paymentMode ?? "cod",
+          paymentMode: dto.paymentMode ?? 'cod',
           isPaid: Boolean(dto.isPaid ?? false),
           grandTotal,
           metadata: dto.metadata ?? {},
@@ -283,14 +358,14 @@ export class OrdersService {
       });
 
       if (createdOrder == null) {
-        throw new InternalServerErrorException("Order missing");
+        throw new InternalServerErrorException('Order missing');
       }
       const id = (createdOrder as OrderDocument)._id;
 
       const fresh = await this.orderModel
         .findById(id)
-        .populate("items.menuItemId")
-        .populate("counterId")
+        .populate('items.menuItemId')
+        .populate('counterId')
         .exec();
 
       // session committed successfully
@@ -298,12 +373,12 @@ export class OrdersService {
 
       if (!fresh) {
         // again very unlikely; defensive programming
-        throw new InternalServerErrorException("Created order not found");
+        throw new InternalServerErrorException('Created order not found');
       }
 
       return fresh as OrderDocument;
     } catch (err) {
-      console.log(err, "err");
+      console.log(err, 'err');
       // errors thrown in transaction will cause rollback
       if (
         err instanceof NotFoundException ||
@@ -313,44 +388,101 @@ export class OrdersService {
       }
       // wrap other errors
       throw new InternalServerErrorException(
-        err.message || "Failed to create order"
+        err.message || 'Failed to create order',
       );
     } finally {
       await session.endSession();
     }
   }
 
-  async findAll(tenantId: string): Promise<OrderDocument[]> {
-    return this.orderModel
-      .find({ tenantId: new Types.ObjectId(tenantId) })
-      .populate("items.menuItemId")
-      .populate("counterId")
-      .exec();
+  async findAll(
+    tenantId: string,
+    page: number = 1,
+    limit: number = 10,
+  ): Promise<{
+    data: OrderDocument[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    try {
+      if (page < 1) page = 1;
+      if (limit < 1) limit = 10;
+
+      const skip = (page - 1) * limit;
+
+      const [orders, total] = await Promise.all([
+        this.orderModel
+          .find({ tenantId: new Types.ObjectId(tenantId) })
+          .populate('items.menuItemId')
+          .populate('counterId')
+          .skip(skip)
+          .limit(limit)
+          .sort({ createdAt: -1 })
+          .exec(),
+        this.orderModel.countDocuments({
+          tenantId: new Types.ObjectId(tenantId),
+        }),
+      ]);
+
+      // Transform response to match desired format
+      const transformedOrders = orders.map((order: any) => ({
+        ...order.toObject(),
+        counterId: order.counterId?._id || order.counterId,
+        counterName: order.counterId?.counterName || '',
+        items: (order.items || []).map((item: any) => {
+          const menuItem = item.menuItemId as any;
+          return {
+            _id: item._id,
+            menuItemId: menuItem?._id || item.menuItemId,
+            name: menuItem?.name || '',
+            variant: item.variant,
+            qty: item.qty,
+            unitPrice: item.price,
+            total: item.total,
+            status: item.status,
+            preparedQty: item.preparedQty,
+          };
+        }),
+      }));
+
+      return {
+        data: transformedOrders,
+        total,
+        page,
+        limit,
+      };
+    } catch (err) {
+      if (err instanceof NotFoundException) throw err;
+      throw new InternalServerErrorException(
+        err?.message ?? 'Failed to fetch orders',
+      );
+    }
   }
 
   async findOne(tenantId: string, id: string): Promise<OrderDocument> {
     try {
       // validate id early
       if (!Types.ObjectId.isValid(id)) {
-        throw new BadRequestException("Invalid order id");
+        throw new BadRequestException('Invalid order id');
       }
 
       // Populate any possible refs used by different business types.
       // Add more paths here if your schemas include additional refs.
       const order = await this.orderModel
         .findOne({ _id: id, tenantId: new Types.ObjectId(tenantId) })
-        .populate("items.menuItemId") // restaurant menu item
-        .populate("items.productId") // retail/ecommerce product
-        .populate("items.variantId") // ecommerce variant
-        .populate("items.serviceId") // service entry
-        .populate("items.assignedProviderId") // service provider
-        .populate("items.warehouseId") // retail warehouse
-        .populate("counterId") // token counter
+        .populate('items.menuItemId') // restaurant menu item
+        .populate('items.productId') // retail/ecommerce product
+        .populate('items.variantId') // ecommerce variant
+        .populate('items.serviceId') // service entry
+        .populate('items.assignedProviderId') // service provider
+        .populate('items.warehouseId') // retail warehouse
+        .populate('counterId') // token counter
         .exec();
 
       if (!order) {
         throw new NotFoundException(
-          "Order not found for the given tenant and id"
+          'Order not found for the given tenant and id',
         );
       }
 
@@ -389,7 +521,7 @@ export class OrdersService {
       }
       // wrap unexpected errors with a clear message
       throw new InternalServerErrorException(
-        err?.message ?? "Failed to fetch order details"
+        err?.message ?? 'Failed to fetch order details',
       );
     }
   }
@@ -401,7 +533,7 @@ export class OrdersService {
   async updateItemStatus(
     tenantId: string,
     orderId: string,
-    dto: UpdateOrderItemStatusDto
+    dto: UpdateOrderItemStatusDto,
   ): Promise<OrderDocument> {
     const session = await this.orderModel.db.startSession();
     try {
@@ -414,20 +546,20 @@ export class OrdersService {
           })
           .session(session);
 
-        if (!order) throw new NotFoundException("Order not found");
+        if (!order) throw new NotFoundException('Order not found');
 
         const item = order.items.find(
-          (it) => it._id?.toString() === dto.itemId
+          (it) => it._id?.toString() === dto.itemId,
         );
-        if (!item) throw new NotFoundException("Order item not found");
+        if (!item) throw new NotFoundException('Order item not found');
 
         // validate status
         if (
           !Object.values(OrderItemStatus).includes(
-            dto.status as OrderItemStatus
+            dto.status as OrderItemStatus,
           )
         ) {
-          throw new BadRequestException("Invalid item status");
+          throw new BadRequestException('Invalid item status');
         }
 
         // set status and optional preparedQty
@@ -444,14 +576,14 @@ export class OrdersService {
       });
 
       if (result == null) {
-        throw new InternalServerErrorException("Order missing");
+        throw new InternalServerErrorException('Order missing');
       }
       const id = (result as OrderDocument)._id;
 
       const fresh = await this.orderModel
         .findById(id)
-        .populate("items.menuItemId")
-        .populate("counterId")
+        .populate('items.menuItemId')
+        .populate('counterId')
         .exec();
 
       // session committed successfully
@@ -459,7 +591,7 @@ export class OrdersService {
 
       if (!fresh) {
         // again very unlikely; defensive programming
-        throw new InternalServerErrorException("Created order not found");
+        throw new InternalServerErrorException('Created order not found');
       }
 
       return fresh as OrderDocument;
@@ -470,7 +602,7 @@ export class OrdersService {
       )
         throw err;
       throw new InternalServerErrorException(
-        err.message || "Failed to update item status"
+        err.message || 'Failed to update item status',
       );
     } finally {
       await session.endSession();
@@ -579,7 +711,7 @@ export class OrdersService {
   async remakeItem(
     tenantId: string,
     orderId: string,
-    dto: RemakeOrderItemDto
+    dto: RemakeOrderItemDto,
   ): Promise<OrderDocument> {
     const session = await this.orderModel.db.startSession();
     try {
@@ -593,14 +725,14 @@ export class OrdersService {
           })
           .session(session);
 
-        if (!order) throw new NotFoundException("Order not found");
+        if (!order) throw new NotFoundException('Order not found');
 
         const originalIndex = order.items.findIndex(
-          (item) => item._id?.toString() === dto.originalItemId
+          (item) => item._id?.toString() === dto.originalItemId,
         );
 
         if (originalIndex === -1)
-          throw new NotFoundException("Original item not found");
+          throw new NotFoundException('Original item not found');
 
         // original subdoc
         const original: any = order.items[originalIndex];
@@ -612,7 +744,7 @@ export class OrdersService {
 
         if (!itemType) {
           throw new BadRequestException(
-            "Cannot determine item type for remake (missing discriminator)"
+            'Cannot determine item type for remake (missing discriminator)',
           );
         }
 
@@ -620,7 +752,7 @@ export class OrdersService {
         (order.items[originalIndex] as any).status = OrderItemStatus.REJECTED;
 
         const qty = dto.qty ?? original.qty;
-        if (!qty || qty <= 0) throw new BadRequestException("Qty must be > 0");
+        if (!qty || qty <= 0) throw new BadRequestException('Qty must be > 0');
 
         // Build newItem according to detected type.
         // Below: implement full mappings per business type. Here we show restaurant + generic fallback.
@@ -628,7 +760,7 @@ export class OrdersService {
 
         if (
           itemType === (order as any).businessType ||
-          itemType === "restaurant"
+          itemType === 'restaurant'
         ) {
           // restaurant remake (copy relevant restaurant fields)
           newItem = {
@@ -643,7 +775,7 @@ export class OrdersService {
             preparedQty: 0,
             parentItemId: original._id,
           };
-        } else if (itemType === "retail") {
+        } else if (itemType === 'retail') {
           newItem = {
             _id: new Types.ObjectId(),
             type: itemType,
@@ -655,7 +787,7 @@ export class OrdersService {
             warehouseId: original.warehouseId ?? undefined,
             parentItemId: original._id,
           };
-        } else if (itemType === "service") {
+        } else if (itemType === 'service') {
           newItem = {
             _id: new Types.ObjectId(),
             type: itemType,
@@ -666,9 +798,9 @@ export class OrdersService {
             total: original.price * qty,
             assignedProviderId: original.assignedProviderId ?? undefined,
             parentItemId: original._id,
-            status: "pending",
+            status: 'pending',
           };
-        } else if (itemType === "ecommerce") {
+        } else if (itemType === 'ecommerce') {
           newItem = {
             _id: new Types.ObjectId(),
             type: itemType,
@@ -699,7 +831,7 @@ export class OrdersService {
         order.items.push(newItem);
         order.grandTotal = order.items.reduce(
           (sum, i) => sum + (Number((i as any).total) || 0),
-          0
+          0,
         );
 
         this.recalcOrderStatus(order);
@@ -709,14 +841,14 @@ export class OrdersService {
       });
 
       if (result == null) {
-        throw new InternalServerErrorException("Order missing");
+        throw new InternalServerErrorException('Order missing');
       }
       const id = (result as OrderDocument)._id;
 
       const fresh = await this.orderModel
         .findById(id)
-        .populate("items.menuItemId")
-        .populate("counterId")
+        .populate('items.menuItemId')
+        .populate('counterId')
         .exec();
 
       // session committed successfully
@@ -724,7 +856,7 @@ export class OrdersService {
 
       if (!fresh) {
         // again very unlikely; defensive programming
-        throw new InternalServerErrorException("Created order not found");
+        throw new InternalServerErrorException('Created order not found');
       }
 
       return fresh as OrderDocument;
@@ -735,7 +867,7 @@ export class OrdersService {
       )
         throw err;
       throw new InternalServerErrorException(
-        err.message || "Failed to remake item"
+        err.message || 'Failed to remake item',
       );
     } finally {
       await session.endSession();
@@ -757,7 +889,7 @@ export class OrdersService {
           })
           .session(session);
 
-        if (!order) throw new NotFoundException("Order not found");
+        if (!order) throw new NotFoundException('Order not found');
 
         order.isPaid = true;
         await order.save({ session });
@@ -765,14 +897,14 @@ export class OrdersService {
       });
 
       if (result == null) {
-        throw new InternalServerErrorException("Order missing");
+        throw new InternalServerErrorException('Order missing');
       }
       const id = (result as OrderDocument)._id;
 
       const fresh = await this.orderModel
         .findById(id)
-        .populate("items.menuItemId")
-        .populate("counterId")
+        .populate('items.menuItemId')
+        .populate('counterId')
         .exec();
 
       // session committed successfully
@@ -780,14 +912,14 @@ export class OrdersService {
 
       if (!fresh) {
         // again very unlikely; defensive programming
-        throw new InternalServerErrorException("Created order not found");
+        throw new InternalServerErrorException('Created order not found');
       }
 
       return fresh as OrderDocument;
     } catch (err) {
       if (err instanceof NotFoundException) throw err;
       throw new InternalServerErrorException(
-        err.message || "Failed to mark order paid"
+        err.message || 'Failed to mark order paid',
       );
     } finally {
       await session.endSession();
@@ -810,13 +942,13 @@ export class OrdersService {
           })
           .session(session);
 
-        if (!order) throw new NotFoundException("Order not found");
+        if (!order) throw new NotFoundException('Order not found');
 
         order.status = OrderStatus.CANCELLED;
         order.items.forEach((i) => {
           if (
             ![OrderItemStatus.COOKED, OrderItemStatus.DELIVERED].includes(
-              getItemStatus(i)
+              getItemStatus(i),
             )
           ) {
             (i as any).status = OrderItemStatus.CANCELLED;
@@ -828,14 +960,14 @@ export class OrdersService {
       });
 
       if (result == null) {
-        throw new InternalServerErrorException("Order missing");
+        throw new InternalServerErrorException('Order missing');
       }
       const id = (result as OrderDocument)._id;
 
       const fresh = await this.orderModel
         .findById(id)
-        .populate("items.menuItemId")
-        .populate("counterId")
+        .populate('items.menuItemId')
+        .populate('counterId')
         .exec();
 
       // session committed successfully
@@ -843,14 +975,248 @@ export class OrdersService {
 
       if (!fresh) {
         // again very unlikely; defensive programming
-        throw new InternalServerErrorException("Created order not found");
+        throw new InternalServerErrorException('Created order not found');
       }
 
       return fresh as OrderDocument;
     } catch (err) {
       if (err instanceof NotFoundException) throw err;
       throw new InternalServerErrorException(
-        err.message || "Failed to cancel order"
+        err.message || 'Failed to cancel order',
+      );
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async reorderLast(
+    tenantId: string,
+    dto: { counterId: string; metadata?: any; extraItems?: any[] },
+  ) {
+    const session = await this.orderModel.db.startSession();
+
+    try {
+      let newOrder: OrderDocument | null = null;
+
+      await session.withTransaction(async () => {
+        const lastOrder = await this.orderModel
+          .findOne({ tenantId: Types.ObjectId.createFromHexString(tenantId) })
+          .sort({ createdAt: -1 }) // MOST RECENT ORDER
+          .session(session);
+
+        if (!lastOrder) throw new NotFoundException('No previous order found');
+
+        // --- Token Increment ---
+        const counter = await this.counterModel.findOneAndUpdate(
+          {
+            _id: Types.ObjectId.createFromHexString(dto.counterId),
+            tenantId: Types.ObjectId.createFromHexString(tenantId),
+          },
+          { $inc: { lastToken: 1 } },
+          { new: true, session },
+        );
+
+        if (!counter) throw new NotFoundException('Counter not found');
+
+        const tokenNumber = counter.lastToken;
+
+        // ----- REBUILD items (fresh) -----
+        const clonedItems = lastOrder.items.map((item: any) => {
+          return {
+            _id: new Types.ObjectId(),
+            type: item.type, // RESTAURANT / RETAIL / SERVICE / ECOM
+            menuItemId: item.menuItemId,
+            productId: item.productId,
+            serviceId: item.serviceId,
+            variantId: item.variantId,
+            qty: item.qty,
+            price: item.price ?? item.unitPrice,
+            variant: item.variant ?? undefined,
+            unitPrice: item.unitPrice ?? undefined,
+            total:
+              item.price !== undefined
+                ? item.price * item.qty
+                : item.unitPrice * item.qty,
+            status: OrderItemStatus.PENDING,
+            preparedQty: 0,
+          };
+        });
+
+        // ---  ADD EXTRA ITEMS IF PROVIDED ---
+
+        let extraItemsBuilt: any[] = [];
+
+        if (dto.extraItems?.length) {
+          extraItemsBuilt = this.buildItemsForBusinessType(
+            lastOrder.businessType,
+            dto.extraItems,
+          );
+        }
+
+        const allItems = [...clonedItems, ...extraItemsBuilt];
+
+        const grandTotal = allItems.reduce(
+          (sum, it) => sum + Number(it.total || 0),
+          0,
+        );
+
+        const created = await new this.orderModel({
+          tenantId: Types.ObjectId.createFromHexString(tenantId),
+          businessType: lastOrder.businessType,
+          counterId: Types.ObjectId.createFromHexString(dto.counterId),
+          tokenNumber,
+          orderNumber: `ORD-${Date.now()}`,
+          status: OrderStatus.PENDING,
+          items: allItems,
+          paymentMode: 'cod',
+          isPaid: false,
+          grandTotal,
+          metadata: dto.metadata ?? {},
+        }).save({ session });
+
+        newOrder = created;
+      });
+
+      if (newOrder == null) {
+        throw new InternalServerErrorException('Order missing');
+      }
+      const id = (newOrder as OrderDocument)._id;
+
+      const fresh = await this.orderModel
+        .findById(id)
+        .populate('items.menuItemId')
+        .populate('counterId')
+        .exec();
+
+      if (!fresh) {
+        // again very unlikely; defensive programming
+        throw new InternalServerErrorException('Created order not found');
+      }
+
+      return fresh as OrderDocument;
+    } catch (err) {
+      throw new InternalServerErrorException(err.message);
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async updateOrderStatus(
+    tenantId: string,
+    orderId: string,
+    dto: UpdateOrderStatusDto,
+  ): Promise<OrderDocument> {
+    const session = await this.orderModel.db.startSession();
+
+    try {
+      let updated: OrderDocument | null = null;
+
+      await session.withTransaction(async () => {
+        const order = await this.orderModel
+          .findOne({
+            _id: Types.ObjectId.createFromHexString(orderId),
+            tenantId: Types.ObjectId.createFromHexString(tenantId),
+          })
+          .session(session);
+
+        if (!order) throw new NotFoundException('Order not found');
+
+        // -------------------------------
+        // VALIDATION: Disallow invalid transitions if needed
+        // -------------------------------
+        const current = order.status;
+        const next = dto.status;
+
+        const INVALID = [
+          [OrderStatus.DELIVERED, OrderStatus.PENDING],
+          [OrderStatus.CANCELLED, OrderStatus.PENDING],
+          [OrderStatus.CANCELLED, OrderStatus.READY],
+          [OrderStatus.DELIVERED, OrderStatus.READY],
+        ];
+
+        if (INVALID.some(([a, b]) => a === current && b === next)) {
+          throw new BadRequestException(
+            `Cannot change status from ${current} → ${next}`,
+          );
+        }
+
+        // -------------------------------
+        // BUSINESS RULE:
+        // If user marks order READY / DELIVERED,
+        // update item statuses accordingly
+        // -------------------------------
+        if (next === OrderStatus.READY) {
+          order.items.forEach((i: any) => {
+            if (
+              ![OrderItemStatus.CANCELLED, OrderItemStatus.REJECTED].includes(
+                i.status,
+              )
+            ) {
+              i.status = OrderItemStatus.COOKED;
+              i.preparedQty = i.qty;
+            }
+          });
+        }
+
+        if (next === OrderStatus.DELIVERED) {
+          order.items.forEach((i: any) => {
+            if (
+              ![OrderItemStatus.CANCELLED, OrderItemStatus.REJECTED].includes(
+                i.status,
+              )
+            ) {
+              i.status = OrderItemStatus.DELIVERED;
+              i.preparedQty = i.qty;
+            }
+          });
+        }
+
+        if (next === OrderStatus.CANCELLED) {
+          order.items.forEach((i: any) => {
+            if (
+              ![OrderItemStatus.COOKED, OrderItemStatus.DELIVERED].includes(
+                i.status,
+              )
+            ) {
+              i.status = OrderItemStatus.CANCELLED;
+            }
+          });
+        }
+
+        // -------------------------------
+        // APPLY UPDATE
+        // -------------------------------
+        order.status = next;
+        await order.save({ session });
+        updated = order;
+      });
+
+      if (updated == null) {
+        throw new InternalServerErrorException('Order missing');
+      }
+      const id = (updated as OrderDocument)._id;
+
+      const fresh = await this.orderModel
+        .findById(id)
+        .populate('items.menuItemId')
+        .populate('counterId')
+        .exec();
+
+      if (!fresh) {
+        // again very unlikely; defensive programming
+        throw new InternalServerErrorException('Created order not found');
+      }
+
+      return fresh as OrderDocument;
+    } catch (err) {
+      if (
+        err instanceof NotFoundException ||
+        err instanceof BadRequestException
+      )
+        throw err;
+
+      throw new InternalServerErrorException(
+        err.message || 'Failed to update order status',
       );
     } finally {
       await session.endSession();

@@ -14,6 +14,7 @@ export type OrderDocument = HydratedDocument<Order>;
 export enum OrderItemStatus {
   PENDING = "pending",
   IN_PROGRESS = "in-progress",
+  PARTIAL_COOKED = "partial-cooked",
   COOKED = "cooked",
   REJECTED = "rejected",
   CANCELLED = "cancelled",

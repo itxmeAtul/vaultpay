@@ -1,5 +1,5 @@
-import { IsEnum, IsMongoId, IsNumber, IsOptional, Min } from "class-validator";
-import { OrderItemStatus } from "../schemas/order.schema";
+import { IsEnum, IsMongoId, IsNumber, IsOptional, Min } from 'class-validator';
+import { OrderItemStatus, OrderStatus } from '../schemas/order.schema';
 
 export class UpdateOrderItemStatusDto {
   @IsMongoId()
@@ -12,4 +12,9 @@ export class UpdateOrderItemStatusDto {
   @Min(0)
   @IsOptional()
   preparedQty?: number;
+}
+
+export class UpdateOrderStatusDto {
+  @IsEnum(OrderStatus)
+  status: OrderStatus;
 }

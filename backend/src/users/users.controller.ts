@@ -1,6 +1,16 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
-import { UsersService } from "./users.service";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { UsersService } from './users.service';
+import { Tenant } from 'src/common/decorators/tenant.decorator';
 
 export class CreateUserDto {
   username: string;
